@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { stopAllModes } from './utilis/robotControl';
 import {
   View,
   Text,
@@ -39,7 +40,20 @@ export default function Manuel() {
   const [ip, setIp] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const pan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
-
+  const [etatRobot, setEtatRobot] = useState('En attente...');
+  //fonction pour récupérer l'état du robot
+  const fetchEtatRobot = async () => {
+    if (!ip) return;
+    try {
+      const response = await fetch(`http://${ip}/etat`);
+      if (response.ok) {
+        const etat = await response.text();
+        setEtatRobot(etat);
+      }
+    } catch (err) {
+      console.log('Erreur récupération état robot:', err);
+    }
+  };
   // Récupération de l'IP
   useEffect(() => {
     async function fetchIP() {
@@ -51,7 +65,11 @@ export default function Manuel() {
     }
     fetchIP();
   }, []);
-
+  useEffect(() => {
+    return () => {
+      if (ip) stopAllModes(ip); // ← Appel de la fonction
+    };
+  }, [ip]);
   // Vérifier la connexion à l'ESP32
   const checkConnection = async (storedIp: string) => {
     try {
@@ -95,9 +113,12 @@ export default function Manuel() {
   useEffect(() => {
     const interval = setInterval(() => {
       fetchObstacle();
+      fetchEtatRobot();
       if (ip) checkConnection(ip);
     }, 500);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+    };
   }, [ip]);
 
   const panResponder = useRef(
