@@ -1,4 +1,4 @@
-package com.finalproject
+package com.drivebot
 
 import android.app.Application
 import com.facebook.react.PackageList
@@ -9,6 +9,7 @@ import com.facebook.react.ReactNativeHost
 import com.facebook.react.ReactPackage
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.facebook.react.defaults.DefaultReactNativeHost
+import com.drivebot.BuildConfig
 
 class MainApplication : Application(), ReactApplication {
 

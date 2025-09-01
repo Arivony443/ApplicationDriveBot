@@ -1,47 +1,123 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { stopAllModes } from './utilis/robotControl';
-import {
-  View,
-  Text,
-  PanResponder,
-  StyleSheet,
-  Animated,
-  Alert,
-} from 'react-native';
+import { View, Text, StyleSheet, Alert, TouchableOpacity } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Slider from '@react-native-community/slider';
 import { getStoredIP } from './Setting';
 
-const size = 220;
-const stickSize = 60;
-const radius = (size - stickSize) / 2;
-
-function getDirection(x: number, y: number): string {
-  const dist = Math.sqrt(x * x + y * y);
-  if (dist < 20) return 'centre';
-  const angle = (Math.atan2(y, x) * 180) / Math.PI;
-
-  if (angle >= -22.5 && angle < 22.5) return 'droite';
-  if (angle >= 22.5 && angle < 67.5) return 'bas-droite';
-  if (angle >= 67.5 && angle < 112.5) return 'bas';
-  if (angle >= 112.5 && angle < 157.5) return 'bas-gauche';
-  if (angle >= 157.5 || angle < -157.5) return 'gauche';
-  if (angle >= -157.5 && angle < -112.5) return 'haut-gauche';
-  if (angle >= -112.5 && angle < -67.5) return 'haut';
-  if (angle >= -67.5 && angle < -22.5) return 'haut-droite';
-
-  return 'centre'; // <- valeur par défaut si angle n’est pas couvert
-}
+type Direction =
+  | 'haut'
+  | 'bas'
+  | 'gauche'
+  | 'droite'
+  | 'stop'
+  | 'haut_droite'
+  | 'haut_gauche'
+  | 'bas_droite'
+  | 'bas_gauche';
 
 export default function Manuel() {
-  const [direction, setDirection] = useState('centre');
-  const [vitesse, setVitesse] = useState(50);
-  const [obstacle, setObstacle] = useState(false);
   const [ip, setIp] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
-  const pan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
   const [etatRobot, setEtatRobot] = useState('En attente...');
-  //fonction pour récupérer l'état du robot
+  const [vitesse, setVitesse] = useState(50);
+
+  // Vérifie la connexion à l'ESP32
+  const checkConnection = async (targetIp?: string) => {
+    const ipToCheck = targetIp || ip;
+    if (!ipToCheck) return;
+    try {
+      const response = await fetch(`http://${ipToCheck}/status`, {
+        method: 'GET',
+        cache: 'no-store',
+      });
+      setConnected(response.ok);
+    } catch {
+      setConnected(false);
+    }
+  };
+
+  // Récupère l'IP stockée et vérifie la connexion au lancement
+  useEffect(() => {
+    let mounted = true;
+    async function fetchIP() {
+      const storedIp = await getStoredIP();
+      if (!storedIp) {
+        Alert.alert('Erreur', 'Aucune IP configurée dans les paramètres');
+        return;
+      }
+      if (mounted) setIp(storedIp);
+      await checkConnection(storedIp);
+    }
+    fetchIP();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Vérifie la connexion toutes les 2 secondes
+  useEffect(() => {
+    if (!ip) return;
+    const interval = setInterval(() => {
+      checkConnection();
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [ip]);
+
+  // Nettoyage à la fermeture
+  useEffect(() => {
+    return () => {
+      if (ip) stopAllModes(ip);
+    };
+  }, [ip]);
+
+  // Envoi direction + vitesse
+  const sendCommand = async (dir: Direction, speed: number) => {
+    if (!ip) return;
+    let endpoint = '';
+    switch (dir) {
+      case 'haut':
+        endpoint = '/avance';
+        break;
+      case 'bas':
+        endpoint = '/recule';
+        break;
+      case 'gauche':
+        endpoint = '/gauche';
+        break;
+      case 'droite':
+        endpoint = '/droite';
+        break;
+      case 'haut_droite':
+        endpoint = '/haut_droite';
+        break;
+      case 'haut_gauche':
+        endpoint = '/haut_gauche';
+        break;
+      case 'bas_droite':
+        endpoint = '/bas_droite';
+        break;
+      case 'bas_gauche':
+        endpoint = '/bas_gauche';
+        break;
+      case 'stop':
+        endpoint = '/stop';
+        break;
+      default:
+        endpoint = '/stop';
+        break;
+    }
+    try {
+      await fetch(`http://${ip}${endpoint}?speed=${speed}`, {
+        method: 'GET',
+        cache: 'no-store',
+      });
+    } catch {
+      setConnected(false);
+    }
+  };
+
+  // Récupération de l'état du robot
   const fetchEtatRobot = async () => {
     if (!ip) return;
     try {
@@ -50,109 +126,28 @@ export default function Manuel() {
         const etat = await response.text();
         setEtatRobot(etat);
       }
-    } catch (err) {
-      console.log('Erreur récupération état robot:', err);
-    }
-  };
-  // Récupération de l'IP
-  useEffect(() => {
-    async function fetchIP() {
-      const storedIp = await getStoredIP();
-      if (!storedIp)
-        Alert.alert('Erreur', 'Aucune IP configurée dans les paramètres');
-      setIp(storedIp);
-      if (storedIp) checkConnection(storedIp);
-    }
-    fetchIP();
-  }, []);
-  useEffect(() => {
-    return () => {
-      if (ip) stopAllModes(ip); // ← Appel de la fonction
-    };
-  }, [ip]);
-  // Vérifier la connexion à l'ESP32
-  const checkConnection = async (storedIp: string) => {
-    try {
-      const response = await fetch(`http://${storedIp}/status`);
-      setConnected(response.ok);
-    } catch {
-      setConnected(false);
-    }
+    } catch {}
   };
 
-  // Envoi direction + vitesse
-  const sendCommand = async (dir: string, speed: number) => {
+  // Rafraîchit état toutes les 500ms
+  useEffect(() => {
     if (!ip) return;
-    try {
-      const response = await fetch(`http://${ip}/manual`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ direction: dir, vitesse: speed }),
-      });
-      setConnected(response.ok);
-    } catch (err) {
-      console.log('Erreur envoi commande ESP32:', err);
-      setConnected(false);
-    }
-  };
-
-  // Récupération obstacle
-  const fetchObstacle = async () => {
-    if (!ip) return;
-    try {
-      const response = await fetch(`http://${ip}/obstacle`);
-      if (response.ok) {
-        const data = await response.json();
-        setObstacle(data.detected);
-      }
-    } catch (err) {
-      console.log('Erreur récupération obstacle:', err);
-    }
-  };
-
-  useEffect(() => {
     const interval = setInterval(() => {
-      fetchObstacle();
       fetchEtatRobot();
-      if (ip) checkConnection(ip);
     }, 500);
-    return () => {
-      clearInterval(interval);
-    };
+    return () => clearInterval(interval);
   }, [ip]);
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onPanResponderMove: (_, gesture) => {
-        let dx = gesture.dx;
-        let dy = gesture.dy;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist > radius) {
-          const angle = Math.atan2(dy, dx);
-          dx = Math.cos(angle) * radius;
-          dy = Math.sin(angle) * radius;
-        }
-        pan.setValue({ x: dx, y: dy });
-        const dir = getDirection(dx, dy);
-        setDirection(dir);
-        sendCommand(dir, vitesse);
-      },
-      onPanResponderRelease: () => {
-        Animated.spring(pan, {
-          toValue: { x: 0, y: 0 },
-          useNativeDriver: false,
-        }).start();
-        setDirection('centre');
-        sendCommand('centre', vitesse);
-      },
-    }),
-  ).current;
 
   // Envoi vitesse au changement
   useEffect(() => {
-    sendCommand(direction, vitesse);
+    sendCommand('stop', vitesse);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vitesse]);
+
+  // Boutons de direction
+  const handlePress = (dir: Direction) => {
+    sendCommand(dir, vitesse);
+  };
 
   return (
     <LinearGradient
@@ -161,29 +156,11 @@ export default function Manuel() {
     >
       <View style={styles.container}>
         <Text style={styles.title}>Commande Manuelle</Text>
-
         <View style={styles.infoCard}>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Direction :</Text>
-            <Text style={[styles.infoValue, { color: '#00e6e6' }]}>
-              {direction.toUpperCase()}
-            </Text>
-          </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Vitesse :</Text>
             <Text style={[styles.infoValue, { color: '#00e6e6' }]}>
               {vitesse} %
-            </Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Obstacle :</Text>
-            <Text
-              style={[
-                styles.infoValue,
-                { color: obstacle ? '#ff5252' : '#00e676', fontWeight: 'bold' },
-              ]}
-            >
-              {obstacle ? 'DÉTECTÉ' : 'AUCUN'}
             </Text>
           </View>
           <View style={styles.infoRow}>
@@ -200,18 +177,83 @@ export default function Manuel() {
               {connected ? 'CONNECTÉ' : 'DÉCONNECTÉ'}
             </Text>
           </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>État robot :</Text>
+            <Text style={[styles.infoValue, { color: '#00e6e6' }]}>
+              {etatRobot}
+            </Text>
+          </View>
         </View>
-
-        <View style={styles.analogContainer}>
-          <Animated.View
-            style={[
-              styles.stick,
-              { transform: [{ translateX: pan.x }, { translateY: pan.y }] },
-            ]}
-            {...panResponder.panHandlers}
-          />
+        <View style={styles.buttonGrid}>
+          <View style={styles.row}>
+            <TouchableOpacity
+              style={styles.button}
+              onPressIn={() => handlePress('haut_gauche')}
+              onPressOut={() => handlePress('stop')}
+            >
+              <Text style={styles.buttonText}>↖</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.button}
+              onPressIn={() => handlePress('haut')}
+              onPressOut={() => handlePress('stop')}
+            >
+              <Text style={styles.buttonText}>▲</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.button}
+              onPressIn={() => handlePress('haut_droite')}
+              onPressOut={() => handlePress('stop')}
+            >
+              <Text style={styles.buttonText}>↗</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.row}>
+            <TouchableOpacity
+              style={styles.button}
+              onPressIn={() => handlePress('gauche')}
+              onPressOut={() => handlePress('stop')}
+            >
+              <Text style={styles.buttonText}>◀</Text>
+            </TouchableOpacity>
+            <View
+              style={[
+                styles.button,
+                { backgroundColor: 'transparent', elevation: 0 },
+              ]}
+            />
+            <TouchableOpacity
+              style={styles.button}
+              onPressIn={() => handlePress('droite')}
+              onPressOut={() => handlePress('stop')}
+            >
+              <Text style={styles.buttonText}>▶</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.row}>
+            <TouchableOpacity
+              style={styles.button}
+              onPressIn={() => handlePress('bas_gauche')}
+              onPressOut={() => handlePress('stop')}
+            >
+              <Text style={styles.buttonText}>↙</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.button}
+              onPressIn={() => handlePress('bas')}
+              onPressOut={() => handlePress('stop')}
+            >
+              <Text style={styles.buttonText}>▼</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.button}
+              onPressIn={() => handlePress('bas_droite')}
+              onPressOut={() => handlePress('stop')}
+            >
+              <Text style={styles.buttonText}>↘</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-
         <View style={styles.sliderContainer}>
           <Text style={styles.sliderLabel}>Vitesse</Text>
           <Slider
@@ -240,29 +282,6 @@ const styles = StyleSheet.create({
     paddingTop: 32,
   },
   title: { fontSize: 36, color: 'white', fontWeight: 'bold', marginBottom: 24 },
-  analogContainer: {
-    width: size,
-    height: size,
-    borderRadius: size / 2,
-    borderWidth: 2,
-    borderColor: '#fff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 32,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-  },
-  stick: {
-    position: 'absolute',
-    left: size / 2 - stickSize / 2,
-    top: size / 2 - stickSize / 2,
-    width: stickSize,
-    height: stickSize,
-    borderRadius: stickSize / 2,
-    backgroundColor: '#fff',
-    borderWidth: 2,
-    borderColor: '#bbb',
-    elevation: 4,
-  },
   infoCard: {
     width: '90%',
     backgroundColor: 'rgba(255,255,255,0.08)',
@@ -279,7 +298,30 @@ const styles = StyleSheet.create({
   },
   infoLabel: { color: '#fff', fontSize: 18, fontWeight: '600' },
   infoValue: { fontSize: 18, fontWeight: 'bold', letterSpacing: 1 },
-  sliderContainer: { width: 300, marginTop: 50, alignItems: 'stretch' },
+  buttonGrid: {
+    alignItems: 'center',
+    marginBottom: 32,
+  },
+  row: {
+    flexDirection: 'row',
+    marginTop: 10,
+  },
+  button: {
+    backgroundColor: '#00e6e6',
+    borderRadius: 40,
+    width: 70,
+    height: 70,
+    alignItems: 'center',
+    justifyContent: 'center',
+    margin: 10,
+    elevation: 4,
+  },
+  buttonText: {
+    fontSize: 36,
+    color: '#012F4E',
+    fontWeight: 'bold',
+  },
+  sliderContainer: { width: 300, marginTop: 30, alignItems: 'stretch' },
   sliderLabel: {
     color: '#00e6e6',
     fontSize: 21,

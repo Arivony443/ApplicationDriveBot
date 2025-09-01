@@ -81,20 +81,43 @@ export default function Autonome() {
     }
   };
 
+  // Vérifie la connexion à l'ESP32
+  const checkConnection = async (targetIp?: string) => {
+    const ipToCheck = targetIp || ip;
+    if (!ipToCheck) return false;
+    try {
+      const response = await fetch(`http://${ipToCheck}/status`, {
+        method: 'GET',
+        cache: 'no-store',
+      });
+      setConnected(response.ok);
+      return response.ok;
+    } catch {
+      setConnected(false);
+      return false;
+    }
+  };
+
   // Activer le mode autonome
   const activerAutonome = async () => {
     if (!ip) return;
+    const isConnected = await checkConnection();
+    if (!isConnected) {
+      Alert.alert('Erreur', 'Robot non connecté');
+      return;
+    }
     try {
       const response = await fetch(`http://${ip}/autonome`);
+      setConnected(response.ok);
       if (response.ok) {
         setModeAutonomeActif(true);
-        fetchEtatRobot(); // Mettre à jour l'état
+        fetchEtatRobot();
         Alert.alert('Succès', 'Mode autonome activé !');
       } else {
         Alert.alert('Erreur', "Impossible d'activer le mode autonome");
       }
     } catch (err) {
-      console.log('Erreur activation mode autonome:', err);
+      setConnected(false);
       Alert.alert('Erreur', 'Connexion perdue');
     }
   };
@@ -102,8 +125,18 @@ export default function Autonome() {
   // Arrêter le mode autonome
   const arreterAutonome = async () => {
     if (!ip) return;
+    const isConnected = await checkConnection();
+    if (!isConnected) {
+      Alert.alert('Erreur', 'Robot non connecté');
+      return;
+    }
     try {
-      const response = await fetch(`http://${ip}/stopauto`);
+      stopAllModes(ip); // Arrêter tous les modes
+      const response = await fetch(`http://${ip}/stopauto`, {
+        method: 'GET',
+        cache: 'no-store',
+      });
+      setConnected(response.ok);
       if (response.ok) {
         setModeAutonomeActif(false);
         fetchEtatRobot(); // Mettre à jour l'état
@@ -186,7 +219,6 @@ export default function Autonome() {
             <TouchableOpacity
               style={[styles.button, styles.stopButton]}
               onPress={arreterAutonome}
-              disabled={!modeAutonomeActif}
             >
               <Text style={styles.buttonText}>ARRÊTER MODE AUTONOME</Text>
             </TouchableOpacity>

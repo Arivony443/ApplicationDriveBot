@@ -59,7 +59,10 @@ export default function Suiveur() {
   const arreterFollowMe = async () => {
     if (!ip) return;
     try {
-      const response = await fetch(`http://${ip}/stopFollow`);
+      const response = await fetch(`http://${ip}/stopFollow`,{
+        method: 'GET',
+        cache: 'no-store'
+      });
       if (response.ok) {
         setModeSuiveurActif(false);
         fetchEtatRobot(); // Mettre à jour l'état
@@ -172,7 +175,6 @@ export default function Suiveur() {
             <TouchableOpacity
               style={[styles.button, styles.stopButton]}
               onPress={arreterFollowMe}
-              disabled={!modeSuiveurActif}
             >
               <Text style={styles.buttonText}>ARRÊTER FOLLOW ME</Text>
             </TouchableOpacity>
